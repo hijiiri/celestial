@@ -1,0 +1,62 @@
+name: celestial
+
+on:
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+
+    env:
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      - name: Openbox + noVNC + Tailscale
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tigervnc-standalone-server novnc websockify python3-websockify x11-utils xterm openbox curl openssl
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+
+          # Create user
+          sudo useradd -m -s /bin/bash dev
+          echo "dev:dev" | sudo chpasswd
+          echo "dev ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/90-dev
+          
+          # Random VNC password
+          RANDPW=$(openssl rand -base64 12 | tr -dc A-Za-z0-9 | head -c12)
+          sudo -u dev mkdir -p /home/dev/.vnc
+          printf "%s\n%s\n\n" "$RANDPW" "$RANDPW" | sudo -u dev vncpasswd
+          echo "$RANDPW" | sudo tee /home/dev/.vnc/current_vnc_password >/dev/null
+          sudo chmod 600 /home/dev/.vnc/current_vnc_password
+
+          # Minimal xstartup (for Openbox)
+          sudo -u dev bash -lc "cat > ~/.vnc/xstartup <<'EOF'
+          #!/bin/sh
+          exec openbox-session
+          EOF
+          chmod +x ~/.vnc/xstartup"
+
+          # Install Tailscale
+          curl -fsSL https://tailscale.com/install.sh | sh
+          sudo systemctl enable --now tailscaled
+
+          # Start VNC (localhost only, for noVNC)
+          sudo -u dev vncserver :1 -localhost yes -geometry 1280x800 -SecurityTypes VncAuth
+
+      - name: Tailscale (IPv4 only) + noVNC proxy
+        run: |
+          sudo tailscale up --auth-key=${{ secrets.TAILSCALE_AUTHKEY }} --hostname=celestial --ssh --accept-routes
+          /usr/share/novnc/utils/novnc_proxy --vnc localhost:5901 --listen 0.0.0.0:6080 --web /usr/share/novnc &
+
+      - name: Keep session alive (6h)
+        run: |
+          echo "===================================================="
+          echo "🌐 URL: http://$(tailscale ip -4):6080/vnc.html"
+          echo "🔑 Password: $(sudo cat /home/dev/.vnc/current_vnc_password)"
+          echo "===================================================="
+          echo "Keeping alive for 6 hours..."
+          sleep 360m
