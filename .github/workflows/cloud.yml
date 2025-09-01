@@ -10,11 +10,14 @@ jobs:
     permissions:
       contents: read
 
+    env:
+      DEBIAN_FRONTEND: noninteractive
+
     steps:
       - name: Install SSH & Cloudflare Tunnel
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq openssh-server curl
+          sudo apt-get install -y -qq openssh-server curl ttyd
           sudo systemctl enable ssh
           sudo systemctl start ssh
 
@@ -28,14 +31,16 @@ jobs:
           chmod +x cloudflared
           sudo mv cloudflared /usr/local/bin/
 
-      - name: Run Cloudflare Tunnel (SSH)
+          ttyd -p 8080 bash &
+          sleep 5
+  
+      - name: Run Cloudflare Tunnel (HTTP)
         run: |
-          cloudflared tunnel --url ssh://localhost:22 --no-autoupdate &
+          cloudflared tunnel --url http://localhost:8080 --no-autoupdate &
           sleep 10
           echo "===================================================="
-          echo "🌐 Use this SSH command:"
-          echo "ssh dev@<URL_FROM_CLOUDFLARE> -p <PORT>"
-          echo "🔑 Password: dev"
+          echo "🌐 Web shell available!"
+          echo "Visit: <URL_FROM_CLOUDFLARE>"
           echo "===================================================="
 
       - name: Keep alive (6h)
