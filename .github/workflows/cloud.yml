@@ -4,32 +4,41 @@ on:
   workflow_dispatch:
 
 jobs:
-  server:
+  ssh:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
       contents: read
 
-    env:
-      DEBIAN_FRONTEND: noninteractive
-
     steps:
-      - name: Install Cloudflare Tunnel
+      - name: Install SSH & Cloudflare Tunnel
         run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server curl
+          sudo systemctl enable ssh
+          sudo systemctl start ssh
+
+          # Create user
+          sudo useradd -m -s /bin/bash dev
+          echo "dev:dev" | sudo chpasswd
+          echo "dev ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/90-dev
+
+          # Install cloudflared
           curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
           chmod +x cloudflared
           sudo mv cloudflared /usr/local/bin/
 
-      - name: Run Cloudflare Tunnel
+      - name: Run Cloudflare Tunnel (SSH)
         run: |
-          # Example: expose local port 8080
-          cloudflared tunnel --url http://127.0.0.1:8080 --no-autoupdate &
+          cloudflared tunnel --url ssh://localhost:22 --no-autoupdate &
           sleep 10
           echo "===================================================="
-          echo "🌐 Cloudflare Tunnel active on port 8080!"
+          echo "🌐 Use this SSH command:"
+          echo "ssh dev@<URL_FROM_CLOUDFLARE> -p <PORT>"
+          echo "🔑 Password: dev"
           echo "===================================================="
 
-      - name: Keep session alive (6h)
+      - name: Keep alive (6h)
         run: |
           echo "Keeping alive for 6 hours..."
           sleep 360m
