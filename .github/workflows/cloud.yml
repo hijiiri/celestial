@@ -1,0 +1,35 @@
+name: cloud
+
+on:
+  workflow_dispatch:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+
+    env:
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      - name: Install Cloudflare Tunnel
+        run: |
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+          chmod +x cloudflared
+          sudo mv cloudflared /usr/local/bin/
+
+      - name: Run Cloudflare Tunnel
+        run: |
+          # Example: expose local port 8080
+          cloudflared tunnel --url http://127.0.0.1:8080 --no-autoupdate &
+          sleep 10
+          echo "===================================================="
+          echo "🌐 Cloudflare Tunnel active on port 8080!"
+          echo "===================================================="
+
+      - name: Keep session alive (6h)
+        run: |
+          echo "Keeping alive for 6 hours..."
+          sleep 360m
