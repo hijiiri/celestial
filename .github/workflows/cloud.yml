@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  ssh:
+  tunnel:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -14,29 +14,56 @@ jobs:
       DEBIAN_FRONTEND: noninteractive
 
     steps:
-      - name: Install ttyd & Cloudflare Tunnel
+      - name: Install tools (ttyd, Dante, Cloudflared, Websockify)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq curl ttyd
+          sudo apt-get install -y -qq curl ttyd dante-server python3-websockify
 
           # Install cloudflared
           curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
           chmod +x cloudflared
           sudo mv cloudflared /usr/local/bin/
 
-          # Start ttyd with basic auth (dev/dev)
+          # Setup Dante config
+          cat <<EOF | sudo tee /etc/danted.conf
+          logoutput: stderr
+          internal: 127.0.0.1 port = 1080
+          external: eth0
+
+          socksmethod: none
+          user.notprivileged: nobody
+
+          client pass {
+            from: 0.0.0.0/0 to: 0.0.0.0/0
+            log: connect disconnect error
+          }
+
+          socks pass {
+            from: 0.0.0.0/0 to: 0.0.0.0/0
+            log: connect disconnect error
+          }
+          EOF
+
+          # Start Dante manually
+          sudo danted -f /etc/danted.conf -D &
+
+          # Start ttyd web shell (optional)
           ttyd -W -p 8080 bash &
           sleep 5
-  
-      - name: Run Cloudflare Tunnel (HTTP)
+
+      - name: Run Cloudflare Tunnel (SOCKS proxy over WebSocket)
         run: |
-          cloudflared tunnel --url http://localhost:8080 --no-autoupdate 2>&1 | tee tunnel.log &
+          # Forward WebSocket to Dante SOCKS
+          websockify 127.0.0.1:1081 127.0.0.1:1080 --daemon
+
+          # Expose websockify via Cloudflare (HTTP WS Host)
+          cloudflared tunnel --url http://localhost:1081 --no-autoupdate 2>&1 | tee tunnel.log &
           sleep 10
+
           echo "===================================================="
-          echo "🌐 Web shell available!"
+          echo "🌐 SOCKS proxy (WebSocket Host) available!"
           grep -o "https://.*trycloudflare.com" tunnel.log
-          echo "👤 User: dev"
-          echo "🔑 Password: dev"
+          echo "🔌 Use this as WS Host in your tunneling app"
           echo "===================================================="
 
       - name: Keep alive (6h)
