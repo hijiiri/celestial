@@ -1,63 +1,15 @@
-name: cloud
+name: SSH Debug
 
-on:
-  workflow_dispatch:
+on: workflow_dispatch
 
 jobs:
-  tunnel:
+  ssh:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
-
-    env:
-      DEBIAN_FRONTEND: noninteractive
-      
+    timeout-minutes: 370 # 6h + buffer
     steps:
-      - name: Install tools
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq curl dante-server python3-websockify
-
-          # Install cloudflared
-          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
-          chmod +x cloudflared
-          sudo mv cloudflared /usr/local/bin/
-
-      - name: Configure Dante (SOCKS5)
-        run: |
-          cat <<EOF | sudo tee /etc/danted.conf
-          logoutput: stderr
-          internal: 127.0.0.1 port = 1080
-          external: eth0
-
-          socksmethod: none
-          user.notprivileged: nobody
-
-          client pass {
-            from: 0.0.0.0/0 to: 0.0.0.0/0
-            log: connect disconnect error
-          }
-
-          socks pass {
-            from: 0.0.0.0/0 to: 0.0.0.0/0
-            log: connect disconnect error
-          }
-          EOF
-
-          sudo danted -f /etc/danted.conf -D &
-
-      - name: Run Cloudflare WebSocket Tunnel
-        run: |
-          # Forward WebSocket -> Dante
-          websockify 127.0.0.1:1081 127.0.0.1:1080 --daemon
-
-          # Expose via Cloudflare
-          cloudflared tunnel --url http://localhost:1081 --no-autoupdate 2>&1 | tee tunnel.log &
-          sleep 10
-
-          echo "===================================================="
-          echo "🌐 WS Proxy URL:"
-          grep -o "https://.*trycloudflare.com" tunnel.log
-          echo "===================================================="
-
-      - name: Keep alive (6h)
-        run: sleep 360m
+      - name: Start SSH session
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true # only you see the SSH command
+      - name: Keep alive
+        run: sleep 6h
