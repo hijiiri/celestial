@@ -6,7 +6,7 @@ on:
 jobs:
   desktop:
     runs-on: ubuntu-latest
-    timeout-minutes: 720
+    timeout-minutes: 360
     permissions:
       contents: read
 
@@ -59,4 +59,4 @@ jobs:
           echo "🔑 Password: $(sudo cat /home/dev/.vnc/current_vnc_password)"
           echo "===================================================="
           echo "Keeping alive for 6 hours..."
-          sleep 720m
+          sleep 360m
